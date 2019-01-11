@@ -33,6 +33,7 @@ import org.apache.hadoop.hdds.protocol.proto
     .StorageContainerDatanodeProtocolProtos.PipelineAction;
 import org.apache.hadoop.hdds.scm.HddsServerUtil;
 import org.apache.hadoop.hdds.scm.pipeline.PipelineID;
+import org.apache.hadoop.hdds.security.x509.SecurityConfig;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.OzoneConsts;
 import org.apache.hadoop.ozone.container.common.interfaces.ContainerDispatcher;
@@ -44,6 +45,8 @@ import org.apache.ratis.RatisHelper;
 import org.apache.ratis.client.RaftClientConfigKeys;
 import org.apache.ratis.conf.RaftProperties;
 import org.apache.ratis.grpc.GrpcConfigKeys;
+import org.apache.ratis.grpc.GrpcFactory;
+import org.apache.ratis.grpc.GrpcTlsConfig;
 import org.apache.ratis.netty.NettyConfigKeys;
 import org.apache.ratis.protocol.RaftClientRequest;
 import org.apache.ratis.protocol.Message;
@@ -107,9 +110,9 @@ public final class XceiverServerRatis implements XceiverServerSpi {
   private long nodeFailureTimeoutMs;
   private final long cacheEntryExpiryInteval;
 
-
   private XceiverServerRatis(DatanodeDetails dd, int port,
-      ContainerDispatcher dispatcher, Configuration conf, StateContext context)
+      ContainerDispatcher dispatcher, Configuration conf, StateContext
+      context, GrpcTlsConfig tlsConfig)
       throws IOException {
     Objects.requireNonNull(dd, "id == null");
     this.port = port;
@@ -139,12 +142,14 @@ public final class XceiverServerRatis implements XceiverServerSpi {
     for (int i = 0; i < numContainerOpExecutors; i++) {
       executors.add(Executors.newSingleThreadExecutor());
     }
-
-    this.server = RaftServer.newBuilder()
+    RaftServer.Builder builder = RaftServer.newBuilder()
         .setServerId(RatisHelper.toRaftPeerId(dd))
         .setProperties(serverProperties)
-        .setStateMachineRegistry(this::getStateMachine)
-        .build();
+        .setStateMachineRegistry(this::getStateMachine);
+    if (tlsConfig != null) {
+      builder.setParameters(GrpcFactory.newRaftParameters(tlsConfig));
+    }
+    this.server = builder.build();
   }
 
   private ContainerStateMachine getStateMachine(RaftGroupId gid) {
@@ -175,7 +180,7 @@ public final class XceiverServerRatis implements XceiverServerSpi {
         OzoneConfigKeys.DFS_CONTAINER_RATIS_SEGMENT_PREALLOCATED_SIZE_KEY,
         OzoneConfigKeys.DFS_CONTAINER_RATIS_SEGMENT_PREALLOCATED_SIZE_DEFAULT,
         StorageUnit.BYTES);
-    RaftServerConfigKeys.Log.Appender.setBufferCapacity(properties,
+    RaftServerConfigKeys.Log.Appender.setBufferByteLimit(properties,
         SizeInBytes.valueOf(raftSegmentPreallocatedSize));
     RaftServerConfigKeys.Log.setPreallocatedSize(properties,
         SizeInBytes.valueOf(raftSegmentPreallocatedSize));
@@ -256,7 +261,7 @@ public final class XceiverServerRatis implements XceiverServerSpi {
     RaftServerConfigKeys.Rpc.setTimeoutMax(properties,
         TimeDuration.valueOf(leaderElectionMaxTimeout, TimeUnit.MILLISECONDS));
     // Enable batch append on raft server
-    RaftServerConfigKeys.Log.Appender.setBatchEnabled(properties, true);
+    //RaftServerConfigKeys.Log.Appender.setBatchEnabled(properties, true);
 
     // Set the maximum cache segments
     RaftServerConfigKeys.Log.setMaxCachedSegmentNum(properties, 2);
@@ -302,7 +307,7 @@ public final class XceiverServerRatis implements XceiverServerSpi {
     int logQueueSize =
         conf.getInt(OzoneConfigKeys.DFS_CONTAINER_RATIS_LOG_QUEUE_SIZE,
             OzoneConfigKeys.DFS_CONTAINER_RATIS_LOG_QUEUE_SIZE_DEFAULT);
-    RaftServerConfigKeys.Log.setQueueSize(properties, logQueueSize);
+    RaftServerConfigKeys.Log.setElementLimit(properties, logQueueSize);
 
     int numSyncRetries = conf.getInt(
         OzoneConfigKeys.DFS_CONTAINER_RATIS_STATEMACHINEDATA_SYNC_RETRIES,
@@ -340,10 +345,12 @@ public final class XceiverServerRatis implements XceiverServerSpi {
             + "fallback to use default port {}", localPort, e);
       }
     }
+    GrpcTlsConfig tlsConfig = RatisHelper.createTlsServerConfig(
+          new SecurityConfig(ozoneConf));
     datanodeDetails.setPort(
         DatanodeDetails.newPort(DatanodeDetails.Port.Name.RATIS, localPort));
     return new XceiverServerRatis(datanodeDetails, localPort,
-        dispatcher, ozoneConf, context);
+        dispatcher, ozoneConf, context, tlsConfig);
   }
 
   @Override
@@ -409,7 +416,7 @@ public final class XceiverServerRatis implements XceiverServerSpi {
     RaftClientReply reply;
     RaftClientRequest raftClientRequest =
         createRaftClientRequest(request, pipelineID,
-            RaftClientRequest.writeRequestType(replicationLevel));
+            RaftClientRequest.writeRequestType());
     try {
       reply = server.submitClientRequestAsync(raftClientRequest).get();
     } catch (Exception e) {

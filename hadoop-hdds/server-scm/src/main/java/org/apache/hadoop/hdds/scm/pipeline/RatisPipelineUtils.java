@@ -20,17 +20,20 @@ package org.apache.hadoop.hdds.scm.pipeline;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.scm.ScmConfigKeys;
+import org.apache.hadoop.hdds.scm.client.HddsClientUtils;
+import org.apache.hadoop.hdds.security.x509.SecurityConfig;
 import org.apache.hadoop.io.MultipleIOException;
 import org.apache.ratis.RatisHelper;
 import org.apache.ratis.client.RaftClient;
+import org.apache.ratis.grpc.GrpcTlsConfig;
 import org.apache.ratis.protocol.RaftGroup;
 import org.apache.ratis.protocol.RaftGroupId;
 import org.apache.ratis.protocol.RaftPeer;
 import org.apache.ratis.retry.RetryPolicy;
 import org.apache.ratis.rpc.SupportedRpcType;
-import org.apache.ratis.util.CheckedBiConsumer;
 import org.apache.ratis.util.TimeDuration;
 import org.apache.ratis.util.TimeoutScheduler;
+import org.apache.ratis.util.function.CheckedBiConsumer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -135,9 +138,13 @@ public final class RatisPipelineUtils {
             ScmConfigKeys.DFS_CONTAINER_RATIS_RPC_TYPE_DEFAULT);
     final RetryPolicy retryPolicy = RatisHelper.createRetryPolicy(ozoneConf);
     final RaftPeer p = RatisHelper.toRaftPeer(dn);
+    final int maxOutstandingRequests =
+        HddsClientUtils.getMaxOutstandingRequests(ozoneConf);
+    final GrpcTlsConfig tlsConfig = RatisHelper.createTlsClientConfig(
+        new SecurityConfig(ozoneConf));
     RaftClient client = RatisHelper
         .newRaftClient(SupportedRpcType.valueOfIgnoreCase(rpcType), p,
-            retryPolicy);
+            retryPolicy, maxOutstandingRequests, tlsConfig);
     client
         .groupRemove(RaftGroupId.valueOf(pipelineID.getId()), true, p.getId());
   }
@@ -156,12 +163,16 @@ public final class RatisPipelineUtils {
     final RetryPolicy retryPolicy = RatisHelper.createRetryPolicy(ozoneConf);
     final List<IOException> exceptions =
         Collections.synchronizedList(new ArrayList<>());
+    final int maxOutstandingRequests =
+        HddsClientUtils.getMaxOutstandingRequests(ozoneConf);
+    final GrpcTlsConfig tlsConfig = RatisHelper.createTlsClientConfig(new
+        SecurityConfig(ozoneConf));
 
     datanodes.parallelStream().forEach(d -> {
       final RaftPeer p = RatisHelper.toRaftPeer(d);
       try (RaftClient client = RatisHelper
           .newRaftClient(SupportedRpcType.valueOfIgnoreCase(rpcType), p,
-              retryPolicy)) {
+              retryPolicy, maxOutstandingRequests, tlsConfig)) {
         rpc.accept(client, p);
       } catch (IOException ioe) {
         exceptions.add(
