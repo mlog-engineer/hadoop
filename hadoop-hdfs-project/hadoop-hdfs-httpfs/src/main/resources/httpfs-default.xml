@@ -197,6 +197,17 @@
   </property>
 
   <property>
+    <name>httpfs.authentication.accesskey.auth.class.impl</name>
+    <value>org.apache.hadoop.security.authentication.server.AnonymousAccessKeyAuthenticator</value>
+    <description>
+      Defines the accesskey authentication mechanism used by httpfs to connect to
+      the HDFS Namenode.
+      Valid values are subclass of org.apache.hadoop.security.authentication.server.AccessKeyAuthenticator.
+    </description>
+  </property>
+
+
+  <property>
     <name>httpfs.hadoop.authentication.kerberos.keytab</name>
     <value>${user.home}/httpfs.keytab</value>
     <description>

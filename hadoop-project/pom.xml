@@ -64,7 +64,7 @@
     <avro.version>1.7.4</avro.version>
 
     <!-- jersey version -->
-    <jersey.version>1.9</jersey.version>
+    <jersey.version>1.10</jersey.version>
 
     <!-- jackson versions -->
     <jackson.version>1.9.13</jackson.version>
@@ -532,7 +532,11 @@
         <artifactId>jersey-server</artifactId>
         <version>${jersey.version}</version>
       </dependency>
-
+      <dependency>
+        <groupId>com.sun.jersey</groupId>
+        <artifactId>jersey-servlet</artifactId>
+        <version>${jersey.version}</version>
+      </dependency>
       <dependency>
         <groupId>com.google.inject</groupId>
         <artifactId>guice</artifactId>

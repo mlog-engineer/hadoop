@@ -215,6 +215,10 @@ public class AuthenticationFilter implements Filter {
     } else if (authHandlerName.toLowerCase(Locale.ENGLISH).equals(
         KerberosAuthenticationHandler.TYPE)) {
       authHandlerClassName = KerberosAuthenticationHandler.class.getName();
+    } else if(authHandlerName.toLowerCase(Locale.ENGLISH).equals(
+        AccessKeyAuthenticationHandler.TYPE
+    )) {
+      authHandlerClassName = AccessKeyAuthenticationHandler.class.getName();
     } else {
       authHandlerClassName = authHandlerName;
     }

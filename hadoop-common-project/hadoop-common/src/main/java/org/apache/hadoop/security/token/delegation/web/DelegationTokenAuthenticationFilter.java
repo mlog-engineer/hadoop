@@ -30,6 +30,7 @@ import org.apache.hadoop.security.authentication.server.AuthenticationHandler;
 import org.apache.hadoop.security.authentication.server.AuthenticationToken;
 import org.apache.hadoop.security.authentication.server.KerberosAuthenticationHandler;
 import org.apache.hadoop.security.authentication.server.PseudoAuthenticationHandler;
+import org.apache.hadoop.security.authentication.server.AccessKeyAuthenticationHandler;
 import org.apache.hadoop.security.authentication.util.ZKSignerSecretProvider;
 import org.apache.hadoop.security.authorize.AuthorizationException;
 import org.apache.hadoop.security.authorize.ProxyUsers;
@@ -38,7 +39,6 @@ import org.apache.hadoop.security.token.delegation.ZKDelegationTokenSecretManage
 import org.apache.hadoop.util.HttpExceptionUtils;
 import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
-import org.codehaus.jackson.map.ObjectMapper;
 
 import javax.servlet.FilterChain;
 import javax.servlet.FilterConfig;
@@ -49,13 +49,10 @@ import javax.servlet.http.HttpServletRequestWrapper;
 import javax.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
-import java.io.Writer;
 import java.nio.charset.Charset;
 import java.security.Principal;
 import java.util.Enumeration;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Properties;
 
 /**
@@ -137,6 +134,9 @@ public class DelegationTokenAuthenticationFilter
     } else if (authType.equals(KerberosAuthenticationHandler.TYPE)) {
       props.setProperty(AUTH_TYPE,
           KerberosDelegationTokenAuthenticationHandler.class.getName());
+    } else if (authType.equals(AccessKeyAuthenticationHandler.TYPE)) {
+      props.setProperty(AUTH_TYPE,
+          AccessKeyAuthenticationHandler.class.getName());
     }
   }
 
@@ -184,7 +184,9 @@ public class DelegationTokenAuthenticationFilter
       dtHandler.setExternalDelegationTokenSecretManager(dtSecretManager);
     }
     if (handler instanceof PseudoAuthenticationHandler ||
-        handler instanceof PseudoDelegationTokenAuthenticationHandler) {
+        handler instanceof PseudoDelegationTokenAuthenticationHandler ||
+        handler instanceof AccessKeyAuthenticationHandler ||
+        handler instanceof AccessKeyDelegationTokenAuthenticationHandler) {
       setHandlerAuthMethod(SaslRpcServer.AuthMethod.SIMPLE);
     }
     if (handler instanceof KerberosAuthenticationHandler ||

@@ -17,9 +17,31 @@
  */
 package org.apache.hadoop.fs.http.client;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInput;
+import java.io.DataOutput;
+import java.io.FileNotFoundException;
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.security.AccessControlContext;
+import java.security.AccessController;
+import java.security.PrivilegedExceptionAction;
+import java.text.MessageFormat;
 import java.util.ArrayList;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
+import javax.security.auth.Subject;
+
 import org.apache.hadoop.classification.InterfaceAudience;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.ContentSummary;
@@ -40,8 +62,6 @@ import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.lib.wsrs.EnumSetParam;
 import org.apache.hadoop.security.UserGroupInformation;
-import org.apache.hadoop.security.authentication.server.AccessKeyAuthenticationHandler;
-import org.apache.hadoop.security.authentication.server.PseudoAuthenticationHandler;
 import org.apache.hadoop.security.token.Token;
 import org.apache.hadoop.security.token.TokenIdentifier;
 import org.apache.hadoop.security.token.delegation.web.DelegationTokenAuthenticatedURL;
@@ -60,32 +80,13 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.FileNotFoundException;
-import java.io.FilterInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
-import java.security.PrivilegedExceptionAction;
-import java.text.MessageFormat;
-import java.util.HashMap;
-import java.util.Map;
-
 /**
  * HttpFSServer implementation of the FileSystemAccess FileSystem.
  * <p>
  * This implementation allows a user to access HDFS over HTTP via a HttpFSServer server.
  */
 @InterfaceAudience.Private
-public class HttpFSFileSystem extends FileSystem
-  implements DelegationTokenRenewer.Renewable {
+public class AccessKeyHttpFSFileSystem extends FileSystem {
 
   public static final String SERVICE_NAME = HttpFSUtils.SERVICE_NAME;
 
@@ -129,6 +130,9 @@ public class HttpFSFileSystem extends FileSystem
   public static final String SET_REPLICATION_JSON = "boolean";
 
   public static final String UPLOAD_CONTENT_TYPE= "application/octet-stream";
+
+  private String accessKey;
+
 
   public static enum FILE_TYPE {
     FILE, DIRECTORY, SYMLINK;
@@ -216,15 +220,11 @@ public class HttpFSFileSystem extends FileSystem
 
   }
 
-  private String authType;
-  private String accessKey;
-
   private DelegationTokenAuthenticatedURL authURL;
   private DelegationTokenAuthenticatedURL.Token authToken =
       new DelegationTokenAuthenticatedURL.Token();
   private URI uri;
   private Path workingDir;
-  private UserGroupInformation realUser;
 
 
 
@@ -278,14 +278,7 @@ public class HttpFSFileSystem extends FileSystem
     }
     final URL url = HttpFSUtils.createURL(path, params, multiValuedParams);
     try {
-      return UserGroupInformation.getCurrentUser().doAs(
-          new PrivilegedExceptionAction<HttpURLConnection>() {
-            @Override
-            public HttpURLConnection run() throws Exception {
-              return getConnection(url, method);
-            }
-          }
-      );
+      return getConnection(url, method);
     } catch (Exception ex) {
       if (ex instanceof IOException) {
         throw (IOException) ex;
@@ -321,6 +314,8 @@ public class HttpFSFileSystem extends FileSystem
     }
   }
 
+
+
   /**
    * Called after a new FileSystem instance is constructed.
    *
@@ -329,14 +324,7 @@ public class HttpFSFileSystem extends FileSystem
    */
   @Override
   public void initialize(URI name, Configuration conf) throws IOException {
-    UserGroupInformation ugi = UserGroupInformation.getCurrentUser();
-
-    //the real use is the one that has the Kerberos credentials needed for
-    //SPNEGO to work
-    realUser = ugi.getRealUser();
-    if (realUser == null) {
-      realUser = UserGroupInformation.getLoginUser();
-    }
+    accessKey = conf.get("httpfs.auth.accesskey");
     super.initialize(name, conf);
     try {
       uri = new URI(name.getScheme() + "://" + name.getAuthority());
@@ -344,22 +332,10 @@ public class HttpFSFileSystem extends FileSystem
       throw new IOException(ex);
     }
 
-    authType = conf.get("httpfs.authentication.type",PseudoAuthenticationHandler.TYPE);
-    if(authType.equals(PseudoAuthenticationHandler.TYPE)) {
-      Class<? extends DelegationTokenAuthenticator> klass =
-          getConf().getClass("httpfs.authenticator.class",
-              KerberosDelegationTokenAuthenticator.class,
-              DelegationTokenAuthenticator.class);
-      DelegationTokenAuthenticator authenticator =
-          ReflectionUtils.newInstance(klass, getConf());
-      authURL = new DelegationTokenAuthenticatedURL(authenticator);
-    } else if(authType.equals(AccessKeyAuthenticationHandler.TYPE)) {
-      accessKey = conf.get("httpfs.auth.accesskey");
-      AccessKeyDelegationTokenAuthenticator delegationTokenAuthenticator =
-          new AccessKeyDelegationTokenAuthenticator(
-              new AccessKeyAuthenticator(conf));
-      authURL = new DelegationTokenAuthenticatedURL(delegationTokenAuthenticator);
-    }
+    AccessKeyDelegationTokenAuthenticator delegationTokenAuthenticator =
+        new AccessKeyDelegationTokenAuthenticator(
+        new AccessKeyAuthenticator(conf));
+    authURL = new DelegationTokenAuthenticatedURL(delegationTokenAuthenticator);
   }
 
   @Override
@@ -1120,16 +1096,6 @@ public class HttpFSFileSystem extends FileSystem
     authURL.cancelDelegationToken(uri.toURL(), authToken);
   }
 
-  @Override
-  public Token<?> getRenewToken() {
-    return null; //TODO : for renewer
-  }
-
-  @Override
-  @SuppressWarnings("unchecked")
-  public <T extends TokenIdentifier> void setDelegationToken(Token<T> token) {
-    //TODO : for renewer
-  }
 
   @Override
   public void setXAttr(Path f, String name, byte[] value,
