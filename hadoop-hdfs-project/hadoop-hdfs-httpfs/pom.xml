@@ -47,8 +47,8 @@
     <tomcat.download.url>
       http://archive.apache.org/dist/tomcat/tomcat-6/v${tomcat.version}/bin/apache-tomcat-${tomcat.version}.tar.gz
     </tomcat.download.url>
+    <maven.deploy.skip>true</maven.deploy.skip>
   </properties>
-
   <dependencies>
     <dependency>
       <groupId>junit</groupId>
@@ -276,6 +276,37 @@
             <goals>
               <goal>jar</goal>
             </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <artifactId>maven-deploy-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>default-deploy</id>
+            <phase>deploy</phase>
+            <goals>
+              <goal>deploy</goal>
+            </goals>
+            <configuration>
+              <skip>true</skip>
+            </configuration>
+          </execution>
+          <execution>
+            <id>deploy-file</id>
+            <phase>deploy</phase>
+            <goals>
+              <goal>deploy-file</goal>
+            </goals>
+            <configuration>
+              <packaging>jar</packaging>
+              <repositoryId>${project.distributionManagement.repository.id}</repositoryId>
+              <url>${project.distributionManagement.repository.url}</url>
+              <file>${project.build.directory}/${project.artifactId}-${project.version}.jar</file>
+              <groupId>${project.groupId}</groupId>
+              <artifactId>${project.artifactId}</artifactId>
+              <version>${project.version}</version>
+            </configuration>
           </execution>
         </executions>
       </plugin>
