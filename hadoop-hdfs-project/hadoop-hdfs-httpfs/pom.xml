@@ -639,8 +639,7 @@
                     <!-- Using Unix script to preserve symlinks -->
                     <echo file="${project.build.directory}/dist-maketar.sh">
                       cd "${project.build.directory}"
-                      tar cf - ${project.artifactId}-${project.version} | gzip >
-                      ${project.artifactId}-${project.version}.tar.gz
+                      tar cf - ${project.artifactId}-${project.version} | gzip > ${project.artifactId}-${project.version}.tar.gz
                     </echo>
                     <exec dir="${project.build.directory}" executable="sh" failonerror="true">
                       <arg line="./dist-maketar.sh"/>
